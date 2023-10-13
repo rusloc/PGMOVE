@@ -7,7 +7,6 @@ import psycopg2 as pg
 from datetime import datetime as dt
 from datetime import timedelta as td
 
-
 class pgmove:
     
     '''
@@ -15,24 +14,21 @@ class pgmove:
             ! DOC !
             *******
     
-            Класс используется для переноса таблиц из одной бд в другую (линейно).
+            Module is used to copy tables in linearly from source PG SQL DB into destination PG SQL DB.
             
-            1. При инициализации класса описывается набор переменных через __slots__
-            2. Затем происходит инциализация переменных из файла config.ini
-            3. При инициализации из файла 
-                3.1. забираются мэппинги таблиц
-                3.2. данные для создания подключений
-                3.3. скрипты SQL для проверки DDL и колонок таблиц
-            4. После считывания данных конфигурации происходит:
-                4.1. инициализация логгеров и установка подключений с передачей в переменные инстанса соединений и курсоров
-            5. Транспорт таблиц происходит в синхронном режиме
-                5.1. Перед переносом выполняется проверка существования сооветствующих таблиц в БД источнике и БД назначения
-		    5.2. Также проверяется схема таблицы источника из мэппинга: если схема табл изменилась то таблица назначения удаляется
-				и создается заново на основании нового DDL из источника.
-            6. Перенос таблиц проихводится через фукнцию MOVE которая в свою очередь использует:
-                6.1. инициализированные подключения (курсоры)
-                6.2. соответствующие функции GET_TABLE и PUT_TABLE для забора и встравки данных таблиц
-            7. Добавлен кастомный HTTP логгер через отдельный класс который отправляет сообщения в Telegram через HTTPS API
+            1. __slots__ - initialization
+            2. config.ini - data initialization 
+            3. Initialization: 
+                3.1. table mappings
+                3.2. connection secrets
+                3.3. DDL SQL script
+            4. Loggers setup
+            5. Linear tables copy process
+                5.1. Before copy the tables are checked in src (if they exist)
+		5.2. After each table schema is checked. If SRC & DST tables schemas differ: the DST table is amended as per DDL of SRC table
+            6. MOVE function is the one that actually tranfers data:
+	    7. MOVE fucntion utilizes GET_TABLE & PUT_TABLE for moving data
+            7. Custom logger is added which sends alerts through HTTPS API of Telegram
             
     '''
     
@@ -60,10 +56,12 @@ class pgmove:
         s._dst_user = s._config.get('dst','user')
         s._dst_password = s._config.get('dst','password')
         s._dst_dbname = s._config.get('dst','dbname')
-        
-        s._key = '5250617487:AAF9j4edtPjY-_d92In0z6FiGijgSrFjAUo'
 
-        s._chat = '-725709893'
+	# Telegram key here
+        s._key = {replace with TG key string}
+
+	# 
+        s._chat = {replace with TG chat ID string}
         
         s._mapping = {x.split(':')[0]:x.split(':')[1] for x in s._config.get('mapping', 'tables').split('\n')}
         
@@ -75,8 +73,10 @@ class pgmove:
         s._buffer = io.StringIO() 
         
     def set_loggers(s):
-                
-        # loggers setup (tglog - измененный класс логера для отправки сообщений в Телеграм
+	'''
+	    Setup loggers: information logger, error logger & telegram logger
+     	    Additional subclassed TG logger is required with mutated function.
+        '''
         
         _handler = logging.FileHandler('_etl_logger.txt', 'a')
         _formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - func_name:  %(funcName)s - %(message)s')
@@ -103,8 +103,8 @@ class pgmove:
         telegram_logger.setLevel(logging.INFO)
 
         http_Handler = tgLog(
-            chat='-725709893',
-            key='5250617487:AAF9j4edtPjY-_d92In0z6FiGijgSrFjAUo')
+            chat=s._chat,
+            key=s._key)
 
         http_Handler.setFormatter(_formatter)
 
@@ -113,6 +113,10 @@ class pgmove:
         return info_logger, error_logger, telegram_logger
         
     def set_con(s, _host, _port, _user, _password, _dbname):
+	    
+	'''
+	    Function sets connection to DB and returns connection & cursor
+        '''
         
         try:
         
@@ -130,18 +134,17 @@ class pgmove:
     def get_table(s, _table = None): 
         
         '''
-            Получение данных из таблицы в буфер через инциализиваронное подключение
+	    Receive table's data into buffer
         '''
         
         s._src_cursor.copy_to(s._buffer, table = str(_table), sep='^')
 
         s._buffer.seek(0)
 
-
     def put_table(s, _table= None, _truncate= False):
         
         '''
-            Вставка данных в таблицу назначения из буфера через инциализиваронное подключение
+	    Data insertion into destination table from buffer
         '''
 
         if _truncate:
@@ -161,30 +164,28 @@ class pgmove:
     def make_table(s, _src_table, _dst_table):
         
         '''
-            Функция удаляет таблицу в базе назначения и создает таблицу заново на основании DDL источника.
-            Игнорируются CONSTRAINTS источника.
+	    Function deletes a table in destination and recreates it based on the DDL statement from the source.
+     	    The source table constraints are ignored.
         '''
                 
-        # удалить таблицу назначение если колонки не совпадают
+        # drop table
         s._dst_cursor.execute(f'drop table if exists {_dst_table}')
 
-        # получить DDL источника
+        # create original src table DDL statement
         s._src_cursor.execute(s._src_ddl.replace('{_table_name_}', _src_table))
-
-        # сохраняем DDL источника
         _ddl = s._src_cursor.fetchone()
         
-        # меняем название таблицы в DDL в соответствии с мэппингом
+	# replace the source table name in DDL according to the mapping sets
         s._dst_cursor.execute(_ddl[0].replace(f'>{_src_table}<' , _dst_table))
 
-        # записываем изменения в базе назначения
+        # commit changes
         s._dst_con.commit()
                 
     def check_table(s, _cursor, _table):
         
         '''
-        Проверка существует ли таблица. 
-        Ответ 1 или 0.
+        Check if table exists
+        1 - YES, 0 - NO
         '''
         
         _query = f'''
@@ -214,7 +215,7 @@ class pgmove:
     def get_table_schema(s, _src_table, _dst_table):
         
         '''
-            Получение схемы таблиц источника и назначения и возвращение списков колонок
+	    Get src & destination tables' schemas and return a list of columns
         '''
         
         s._src_cursor.execute(f'''select 
@@ -242,12 +243,16 @@ class pgmove:
     def check_cols(s, _src_schema, _dst_schema):
 
         '''
-            Проверка (сопоставление) списка колонок в таблице назначения и таблице истоничке
+	    Check in both sides (src vs dst & dst vs src) if columns in tables differ. Return True/False
         '''
         
         return True if _src_schema == [(x[0].lstrip('_'), x[1]) for x in _dst_schema] else False
     
     def cols_dif(s, _src_schema, _dst_schema):
+
+        '''
+	    Creating a list of col differences. Return list
+        '''
     
         sym_dif = []
 
@@ -319,7 +324,6 @@ class pgmove:
                 except Exception:
                     s._error_logger.error(f'Failed to reset and replace {t[1]} crash info: {sys.exc_info()}')
                     
-        
         s._src_con.commit()
         s._src_con.close()
         
