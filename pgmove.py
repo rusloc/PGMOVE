@@ -37,7 +37,7 @@ class pgmove:
     def __init__(s, config_file):
 
 		'''
-			Инициализация базовых переменных подключения, мэппингов и прочих атрибутов
+		    Basic init for: config file, connection strings, loggers
 		'''
         
         s._config = configparser.ConfigParser()
@@ -82,7 +82,6 @@ class pgmove:
         _formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - func_name:  %(funcName)s - %(message)s')
         
         #info logger
-        
         info_logger = logging.getLogger('info_logger')
         info_logger.setLevel(logging.INFO)
 
@@ -90,7 +89,6 @@ class pgmove:
         info_logger.addHandler(_handler)
 
         # error logger
-
         error_logger = logging.getLogger('error_logger')
         error_logger.setLevel(logging.ERROR)
 
@@ -98,7 +96,6 @@ class pgmove:
         error_logger.addHandler(_handler)
         
         # telegram logger
-        
         telegram_logger = logging.getLogger('telegram_logger')
         telegram_logger.setLevel(logging.INFO)
 
@@ -267,7 +264,10 @@ class pgmove:
         return sym_dif
                 
     def move(s):
-        
+    
+        '''
+	    Main function that does the copying.
+        '''
         _start = time.time()
         
         for t in s._mapping.items():
