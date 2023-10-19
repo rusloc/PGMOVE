@@ -6,10 +6,11 @@ class tgLog(logging.Handler):
             *******
             
             Создание кастомного Handler для отправки логов в группу через телеграм бота
+            Custom handler for logging into TG channel
             
-            1. Наследие через __super__ класса хэндлеров
-            2. создание сэссии через requests
-            3. Замена базовой функции EMIT на кастомную которая отправляет сообщения через TG API
+            1. inherit __super__
+            2. need to import REQUESTS for session setup
+            3. change original EMIT function
             
     '''
     
