@@ -4,8 +4,7 @@ class tgLog(logging.Handler):
             *******
             ! DOC !
             *******
-            
-            Создание кастомного Handler для отправки логов в группу через телеграм бота
+        
             Custom handler for logging into TG channel
             
             1. inherit __super__
